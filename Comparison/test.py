@@ -12,7 +12,7 @@ print(x)
 x = list(range(1, x+1))
 print(x)
 
-best = np.poly1d(np.polyfit(x, y2, 3))
+best = np.poly1d(np.polyfit(x, y2, 4))
 curve = np.linspace(1, 3193, 100)
 plt.plot(curve, best(curve), color="orange", linewidth="3")
 
@@ -20,4 +20,5 @@ plt.scatter(x, y1, s=3, c="red", alpha=0.6)
 plt.scatter(x, y2, s=3, c="blue", alpha=0.6)
 plt.xlabel(
     "Each individual 3193 counties (not named because of the lack of space")
+plt.ylabel("Percent completeness")
 plt.show()
