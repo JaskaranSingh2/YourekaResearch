@@ -1,0 +1,470 @@
+---
+title: "Data Preparation"
+author: "Shuce Zhang"
+date: "26/02/2022"
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preamble
+
+This script serves to combine the country-level daily COVID data and the social, economic, and political indicators. These data are merged into one data frame and saved in the `country_daily_data.RDS` file.
+
+Many of the data sources used here are updated frequently. That is to say, each time you run this script, it pulls and combines the latest COVID and other data and combine them in a single data frame.
+
+Although `country_daily_data.RDS` is provided for the midterm challenge and that you are not required to run this script to reproduce the data frame, you may find this script helpful for combining data your Youreka project.
+
+This script is adapted from [*The Economist*'s model to estimate excess deaths to the covid-19 pandemic](https://github.com/TheEconomist/covid-19-the-economist-global-excess-deaths-model). For details of the modelling and data interpretation, please read:
+
+[*The Economist*: How we estimated the true death toll of the pandemic](https://www.economist.com/graphic-detail/2021/05/13/how-we-estimated-the-true-death-toll-of-the-pandemic)
+
+[*The Economist*: The pandemic's true death toll](https://www.economist.com/graphic-detail/coronavirus-excess-deaths-estimates)
+
+[*Nature*: The pandemic's true death toll: millions more than official counts](https://www.nature.com/articles/d41586-022-00104-8)
+
+# Credit
+
+## Data source
+
+Daily COVID data for countries from Our World In Data <https://ourworldindata.org/coronavirus>
+
+Varieties of Democracy (V-Dem) <http://www.v-dem.net/vdemds.html>
+
+Boix-Miller-Rosato Dichotomous Coding of Democracy, 1800-2015 <https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/FJLMKT>
+
+Freedom House - Freedom in the World <https://freedomhouse.org/report/freedom-world>
+
+The Polity Project <https://www.systemicpeace.org/polityproject.html>
+
+World Development Indicators <https://databank.worldbank.org/source/world-development-indicators>
+
+## Code source
+
+The Economist and Solstad, S., 2021. The pandemic's true death toll. [online] *The Economist*. Available at: <https://www.economist.com/graphic-detail/coronavirus-excess-deaths-estimates> [Accessed Feb 26, 2022]. First published in the article "Counting the dead", *The Economist*, issue 20, 2021.
+
+# Load packages
+
+```{r loading-packages}
+rm(list = ls())
+library(tidyverse)
+library(readr)
+library(data.table)
+# install.packages("countrycode")
+library(countrycode)
+# install.packages("zoo)
+library(zoo)
+```
+
+# Daily COVID data
+
+```{r daily-COVID}
+country_daily_data <- fread("https://covid.ourworldindata.org/data/owid-covid-data.csv") %>%
+  mutate(date = as.Date(date),
+         country = location,
+         iso3c = iso_code,
+         region = countrycode(iso3c, origin="iso3c",destination="un.region.name"),
+         subregion = countrycode(iso3c, origin="iso3c",destination="un.regionsub.name"),
+         daily_covid_deaths = new_deaths_smoothed,
+         daily_covid_deaths_per_100k = (daily_covid_deaths / population) * 100000,
+         daily_covid_cases = new_cases_smoothed,
+         daily_covid_cases_per_100k = (daily_covid_cases / population) * 100000,
+         daily_tests = new_tests_smoothed,
+         daily_tests_per_100k = (daily_tests / population) * 100000,
+         daily_positive_rate = positive_rate * 100,
+         daily_vaccinations = new_vaccinations_smoothed,
+         daily_vaccinations_per_100k = (daily_vaccinations / population) * 100000,
+         dose_pct = total_vaccinations_per_hundred,
+         vaccinated_pct = people_vaccinated_per_hundred,
+         fully_vaccinated_pct = people_fully_vaccinated_per_hundred) %>%
+  filter(date >= as.Date("2020-01-01"),
+         !str_detect(iso3c,"OWID")) %>%
+  group_by(iso3c) %>%
+  fill(daily_tests_per_100k,daily_positive_rate)  %>%
+  dplyr::select(date,country,iso3c,region,subregion,population,
+                hospital_beds_per_thousand,
+                population_density,
+                median_age,aged_65_older,aged_70_older,life_expectancy,
+                daily_covid_deaths,daily_covid_deaths_per_100k,
+                daily_covid_cases,daily_covid_cases_per_100k,
+                daily_tests,daily_tests_per_100k,daily_positive_rate,
+                daily_vaccinations,
+                daily_vaccinations_per_100k,
+                dose_pct,
+                vaccinated_pct,
+                fully_vaccinated_pct,
+                total_cases,
+                total_cases_per_million,
+                total_deaths,
+                total_deaths_per_million,
+                total_boosters
+                )
+
+# Fix for Taiwan regions:
+country_daily_data$region[country_daily_data$iso3c == "TWN"] <- "Asia"
+country_daily_data$subregion[country_daily_data$iso3c == "TWN"] <- "Eastern Asia"
+
+
+# Fix for Chinese testing data, which erroneously provides tests per day per 100k for a small interval in 2020 (see source notes here https://ourworldindata.org/coronavirus-testing#china). No testing data for China is at the moment available. 
+country_daily_data$daily_tests[country_daily_data$iso3c == "CHN"] <- NA
+country_daily_data$daily_tests_per_100k[country_daily_data$iso3c == "CHN"] <- NA
+country_daily_data$daily_positive_rate[country_daily_data$iso3c == "CHN"] <- NA
+
+
+```
+
+## Missing data
+
+```{r leading-zero}
+# Ensure data has all days for all countries
+country_daily_data <- merge(country_daily_data, expand.grid(iso3c = unique(country_daily_data$iso3c),
+                            date = seq.Date(min(country_daily_data$date), 
+                                            max(country_daily_data$date), by = 'day'),
+                            stringsAsFactors = FALSE), by = c('iso3c', 'date'), all = TRUE)
+
+# Fill now-missing values for previously missing dates, non-date varying data:
+for(i in c("country","iso3c","region","subregion","population",
+           "hospital_beds_per_thousand",
+           "population_density","median_age","aged_65_older",
+           "aged_70_older","life_expectancy")){
+  country_daily_data[, i] <- ave(country_daily_data[, i],
+                                 country_daily_data$iso3c, 
+                                 FUN = function(x){na.omit(x)[1]})
+}
+
+
+# Fill in leading 0s for covid data:
+
+# Order by date
+country_daily_data <- country_daily_data[order(country_daily_data$date), ]
+
+# Define function
+leading_zeros <- function(x){
+  if(is.na(x[1]) & sum(is.na(x)) != length(x)){
+    x[1:min(which(!is.na(x))-1)] <- 0
+    }
+  x
+}
+
+
+## Cycle through relevant columns an impute leading zeroes
+country_daily_data <- country_daily_data[order(country_daily_data$date), ]
+for(i in c("daily_covid_deaths", "daily_covid_deaths_per_100k",
+           "daily_covid_cases", "daily_covid_cases_per_100k",
+           #"daily_total_deaths",
+           #"daily_total_deaths_per_100k",
+           "vaccinated_pct",
+           "fully_vaccinated_pct",
+           "daily_vaccinations",
+           "daily_vaccinations_per_100k")){
+  country_daily_data[, i] <- 
+    ave(country_daily_data[, i],
+        country_daily_data$iso3c,
+        FUN = function(x) leading_zeros(x))
+}
+```
+
+## Calculate cumulative
+
+```{r calc-cumulative}
+# Generate cumulative tests, cases, deaths, and vaccinations:
+for(i in c("daily_tests", "daily_covid_cases", "daily_covid_deaths", "daily_vaccinations")){
+  country_daily_data[, paste0("cumulative_", i, "_per_100k")] <- ave(
+    country_daily_data[, i], country_daily_data$iso3c, 
+    FUN = function(x){
+      if(sum(is.na(x)) == length(x)){x} else {
+      cumsum(ifelse(is.na(x), 0, x))}}
+  )*(100000/country_daily_data$population)
+}
+```
+
+## Linear imputing
+
+```{r linear--inputing}
+# Adding linearly imputed vaccinations data columns (as some do not release regularly - this assumes linear trend between known values):
+for(i in c("vaccinated_pct",
+           "fully_vaccinated_pct"
+           #"cumulative_daily_vaccinations_per_100k",
+           #"vaccinated_pct_lagged_two_weeks",
+           #"fully_vaccinated_pct_lagged_two_weeks",
+           #"cumulative_daily_vaccinations_per_100k_lagged_two_weeks",
+           #"vaccinated_pct_over_pop_65",
+           #"fully_vaccinated_pct_over_pop_65"
+           )){
+  
+  country_daily_data[, paste0(i, "_intp")] <- ave(country_daily_data[, i], country_daily_data$iso3c, FUN = function(x){
+    zoo::na.approx(x, na.rm = F)
+  })
+}
+
+country_daily_data$vaccinated_pct <- country_daily_data$vaccinated_pct_intp
+country_daily_data$fully_vaccinated_pct <- country_daily_data$fully_vaccinated_pct_intp
+
+country_daily_data$vaccinated_pct_intp <- NULL
+country_daily_data$fully_vaccinated_pct_intp <- NULL
+
+```
+
+# Static country data
+
+## V-DEM
+
+```{r V-DEM}
+# Import V-DEM data (source: https://www.v-dem.net/en/)
+vdem <- fread("source-data/vdem.csv")
+
+# Make descriptive column names and select relevant columns
+vdem <- vdem %>% 
+        rename(
+          iso3c = country_code,
+          vdem_liberal_democracy_score = v2x_libdem,
+          vdem_freedom_of_expression_score = v2x_freexp_altinf) %>% 
+        select(iso3c,
+               vdem_freedom_of_expression_score,
+               vdem_liberal_democracy_score)
+
+# Add to list of static datasets:
+static_data <- list(vdem)
+```
+
+## Boix-Miller-Rosato Dichotomous Coding of Democracy
+
+```{r Boix-Miller-Rosato}
+# Import Boix et al democracy binary classification (source: https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/FJLMKT)
+democracy_binary <- read_csv("source-data/democracy-v3.0.csv")
+
+# Restrict to most recent year:
+democracy_binary <- democracy_binary[democracy_binary$year == 2015, ] 
+
+# Generate iso3c:
+democracy_binary$iso3c <- countrycode(democracy_binary$ccode, "cown", "iso3c")
+
+# Make descriptive column names and select relevant columns
+democracy_binary <- democracy_binary %>% 
+                    rename(
+                        boix_democracy_yes_no = democracy,
+                        boix_democracy_duration_years = democracy_duration) %>% 
+                      select(iso3c,
+                             boix_democracy_yes_no,
+                             boix_democracy_duration_years)
+
+# Add to list of static datasets:
+static_data[[length(static_data) + 1]] <- democracy_binary
+```
+
+## Freedom House
+
+```{r Freedom-house}
+# Import freedom house (source: https://freedomhouse.org/report/freedom-world)
+freedom_house <- read_csv("source-data/freedomhouse.csv")
+
+# Generate iso3c and restrict to entities designated as countries (+ Hong Kong) in most recent year
+freedom_house$iso3c <- countrycode(freedom_house$'Country/Territory', "country.name", "iso3c")
+freedom_house <- freedom_house[freedom_house$Edition == 2020 &
+                               (freedom_house$`C/T` == "c" | freedom_house$`Country/Territory` == "Hong Kong"), ]
+
+# Make descriptive column names and select relevant columns
+freedom_house <- freedom_house %>% 
+  rename(
+    freedom_house_freedom_score = Total,
+    freedom_house_political_rights = PR,
+    freedom_house_civil_liberties = CL) %>% 
+  select(iso3c,
+         freedom_house_civil_liberties,
+         freedom_house_political_rights,
+         freedom_house_freedom_score)
+
+# Add to list of static datasets:
+static_data[[length(static_data) + 1]] <- freedom_house
+```
+
+## The Polity Project
+
+```{r PolityV}
+# Import PolityV (source: https://www.systemicpeace.org/polityproject.html)
+polity <- readxl::read_xls("source-data/p5v2018.xls")
+
+# Generate iso3c and restrict to most recent year
+polity$iso3c <- countrycode(polity$ccode, "cown", "iso3c")
+polity <- polity[polity$year == 2018, ]
+
+# Make descriptive column names and select relevant columns
+polity <- polity %>% 
+  rename(
+    polity_democracy_score = polity2) %>% 
+  select(iso3c,
+         polity_democracy_score)
+
+# Add to list of static datasets:
+static_data[[length(static_data) + 1]] <- polity
+```
+
+## Marking islands
+
+```{r island-marker}
+# Make island indicator variable:
+islands       <- c("Antigua and Barbuda",
+                   "Bahamas",
+                   "Bahrain",
+                   "Barbados",
+                   "Brunei",
+                   "Cape Verde",
+                   "Comoros",
+                   "Cuba",
+                   "Cyprus",
+                   "Dominica",
+                   "Dominican Republic",
+                   "East Timor",
+                   "Federated States of Micronesia",
+                   "Fiji",
+                   "Grenada",
+                   "Haiti",
+                   "Iceland",
+                   "Indonesia",
+                   "Ireland",
+                   "Jamaica",
+                   "Japan",
+                   "Kiribati",
+                   "Madagascar",
+                   "Maldives",
+                   "Malta",
+                   "Marshall Islands",
+                   "Mauritius",
+                   "Nauru",
+                   "New Zealand",
+                   "Northern Cyprus",
+                   "Palau",
+                   "Papua New Guinea",
+                   "Philippines",
+                   "Saint Kitts and Nevis",
+                   "Saint Lucia",
+                   "Saint Vincent and the Grenadines",
+                   "Samoa",
+                   "São Tomé and Príncipe",
+                   "Seychelles",
+                   "Singapore",
+                   "Solomon Islands",
+                   "Sri Lanka",
+                   "Republic of China (Taiwan)",
+                   "Tonga",
+                   "Trinidad and Tobago",
+                   "Tuvalu",
+                   "United Kingdom",
+                   "Vanuatu")
+
+islands <- data.frame(iso3c = countrycode(islands, "country.name",
+                                          "iso3c"),
+                      island = TRUE)
+
+# Ensure all countries either island or not island
+islands <- merge(unique(country_daily_data[, c("iso3c"), drop = F]), 
+                 islands, by = 'iso3c', all = T)
+islands$island[is.na(islands$island)] <- FALSE
+
+static_data[[length(static_data) + 1]] <- islands
+
+```
+
+## World Development Indicators
+
+```{r WDI}
+
+#install.packages("WDI")
+library(WDI)
+wdi <- WDI(country = 'all',
+           indicator = c('wdi_prop_less_2_usd_day' = 'SI.POV.DDAY',
+                         'wdi_gdppc_nominal' = 'NY.GDP.PCAP.CD',
+                         'wdi_gdppc_ppp' = 'NY.GDP.PCAP.PP.CD',
+                         'wdi_urban_population_pct' = 'SP.URB.TOTL.IN.ZS',
+                         'wdi_urban_pop_1m_cities_pct' = 'EN.URB.MCTY.TL.ZS',
+                         'wdi_gini_index' = 'SI.POV.GINI',
+                         'wdi_life_expectancy_at_birth' = 'SP.DYN.LE00.IN',
+                         'wdi_pop_over_65' = 'SP.POP.65UP.TO.ZS',
+                         'wdi_pop_under_15' = 'SP.POP.0014.TO.ZS'))
+
+
+wdi$iso3c <- countrycode(wdi$iso2c, "iso2c", "iso3c")
+wdi$iso2c <- NULL
+wdi$country <- NULL
+
+# Restrict to data that is less than 10 years old
+wdi <- wdi[wdi$year >= 2010, ]
+
+# Only latest observation
+wdi <- wdi[order(wdi$year), ]
+wdi <- wdi[!is.na(wdi$iso3c), ]
+
+# Reshape to long format
+wdi <- pivot_longer(wdi, 
+                    cols = setdiff(colnames(wdi), 
+                                   c("year", "iso3c")))
+
+# remove NA
+wdi <- na.omit(wdi)
+
+# Get max year:
+wdi <- wdi[wdi$year == ave(wdi$year, 
+                           paste0(wdi$iso3c, 
+                                  "_", wdi$name), 
+                           FUN = max), ]
+
+# Get average year lag:
+wdi$wdi_obs_lag <- ave(wdi$year, wdi$iso3c, FUN = function(x) mean(2019-x))
+wdi$wdi_prop_NA <- ave(wdi$year, wdi$iso3c, FUN = function(x) 1-length(x)/length(unique(wdi$name)))
+wdi$year <- NULL
+
+# Transform back to long:
+wdi <- pivot_wider(wdi, id_cols = c("iso3c", 
+                                    "wdi_obs_lag",
+                                    "wdi_prop_NA"),
+                   names_from = "name",
+                   values_from = "value")
+
+static_data[[length(static_data) + 1]] <- wdi
+```
+
+## Combining static data
+
+```{r merging-static-data}
+
+for(i in static_data){
+  country_daily_data <- merge(country_daily_data,
+                                       unique(i), by = "iso3c", all.x = T) }
+```
+
+## Adding *the Economist* variables
+
+```{r country-info}
+econ_df <- read_csv("source-data/economist_country_names.csv") %>%
+  rename(
+    country = Name,
+    economist_region = Regions,
+    wb_income_group = `Income group WB`,
+    imf_economy = `Economy IMF`,
+    iso3c = ISOA3
+    ) %>%
+  select(
+    country, iso3c,
+    iso3c,
+    wb_income_group,
+    imf_economy,
+    economist_region
+  )
+
+country_daily_data$country <- NULL
+country_daily_data <- merge(country_daily_data, 
+                                     econ_df, by = "iso3c", 
+                                     all.x = T)
+```
+
+# Exporting to RDS
+
+```{r export}
+saveRDS(country_daily_data, "country_daily_data.RDS")
+```

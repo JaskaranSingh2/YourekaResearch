@@ -1,0 +1,1747 @@
+---
+title: "Youreka Canada Mid-Program Challenge 2022"
+author: "Programs Team, Pedagogy -  Hao Zheng, Carly Chan, Shuce Zhang"
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preamble
+
+Today, we will apply our knowledge and skills in statistics and R
+programming to analyze COVID-19 data. The data set is prepared by the
+Programs team by integrating data from multiple different sources. In
+this data set, you will not only find COVID-19 related information
+(cases, deaths, vaccination), but also other variables describing
+countries' demographics, political, social and economic situations. Here
+are our expectations for you:
+
+1.  Understand the purpose of the statistical analyses to be performed.
+
+2.  Adapt the code (usually by changing the name of variables) to work
+    on the tasks you are asked to perform.
+
+3.  Interpret the results from tests and figures.
+
+4.  Propose future directions and carry out further exploration based on
+    your conclusions.
+
+## Submission
+
+During today's challenge, you will be given time to work in your group
+and perform the tasks. You may or may not be able to finish the entire
+task in session. Therefore, we ask you to complete and finalize your
+work by **Sunday, March 13, 2022 at 10:00 PM MST**. Specifically,
+
+1.  For each task, please finish the code in the designated code blocks.
+    Interpret and discuss your results as instructed in the task
+    description.
+
+2.  After completing the entire .Rmd document, save the .Rmd file and
+    click the `Knit` button to generate the .html file within the same
+    directory as your .Rmd document bas. Once RStudio finishes knitting
+    the documenting, a window displaying a preview of the html file will
+    open.
+
+3.  Submit your .Rmd file and .html file using [this Google
+    Form](https://forms.gle/ecLNGWWT8cXf68r36). You will also find a few
+    questions asking you to discuss your results from the tasks. The
+    answers should be *both* filled in the Google Form *AND* found in
+    the .Rmd document.
+
+## Evaluation
+
+We will evaluate the following aspects of your work:
+
+1.  **Coding.**
+
+    a.  Correct usage of commands.
+    b.  Robustness and adaptability of the code.
+    c.  Good coding style and convention.
+    d.  Readability of code (e.g. naming of variables, adequate
+        commenting).
+
+2.  **Visualization.**
+
+    a.  Correct choices of figures.
+    b.  Compliance with publication standards.
+
+3.  **Reasoning and communication.**
+
+    a.  Thorough understanding of the statistical methods employed at
+        each step.
+    b.  Adequate discussion and correct interpretation of the results.
+    c.  Appropriate reference to results in figures/tables.
+    d.  Appropriate reference to literature.
+    e.  Proper wording in discussion and interpretation.
+    f.  Critical thinking and insight.
+
+## Procedures
+
+0.  Install the necessary packages and load the data set.
+
+1.  Comparing means of different groups.
+
+2.  Visualize data on world maps and dumbbell plots.
+
+3.  Statistical learning. You have the option to attend one of the 3
+    streams we offer:
+
+    -   A. Clustering with principal component analysis (PCA)
+    -   B. Classification with decision trees
+    -   C. Regression with decision trees
+
+You will have the opportunity to work in your group after each section.
+Although you have the option to attend any of the 3 streams in
+statistical learning, members from the same group are expected to attend
+at least 2 streams. This way, you will acquire a unique expertise that
+will contribute to your group project submission.
+
+On the note of data wrangling - Although the dataset is already prepared
+for you by the Programs team, you may find the scripts for data cleaning
+helpful in your Youreka final project. For this reason, we have also
+included the script for data preparation in the Mid-Program Challenge
+package.
+
+::: {style="page-break-after: always"}
+:::
+
+# Preparation
+
+## Loading packages
+
+First, we will clean RStudio's environment as well as load the tidyverse
+package.
+
+```{r Install-packages, warning=FALSE, error=FALSE, message=FALSE, echo=TRUE, results='hide'}
+rm(list = ls())
+
+# Package names
+packages <- c("leaps", "mgcv", "rmdformats", "nlme", "psych", "ranger", 
+              "caret", "yardstick", "workflowsets",  "workflows", "tune", 
+              "recipes",  "parsnip", "modeldata", "infer", "dials",
+              "scales", "broom", "tidymodels", "rpart.plot", "rsample",
+              "rpart", "softImpute", "Matrix", "factoextra", "plotly", 
+              "ggalt",  "transformr", "gifski", "gganimate", "rnaturalearthdata",
+              "rnaturalearth",  "sf", "ggbeeswarm", "Hmisc", "Formula", 
+              "survival", "lattice", "forcats", "stringr", "dplyr", 
+              "purrr",  "readr",  "tidyr", "tibble", "ggplot2", "tidyverse" )
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+```
+
+## Loading data
+
+Now, we're going to read in the data. The data has already been prepared
+and saved in `country_daily_data.RDS`. Briefly, this data frame was
+generated by `0-data-preparation.Rmd` by combining daily COVID data with
+some relevant country-level social, economic, and political indicators
+from different sources. We will now load it into our R session.
+
+```{r load-data, echo=TRUE, results='hide'}
+covid <- readRDS("country_daily_data.RDS")
+head(covid)
+str(covid)
+summary(covid)
+```
+
+## Data extraction
+
+For the simplicity of analysis, let's focus on the data of only Feb 20,
+2022.
+
+```{r}
+Feb20 <- covid %>%
+  filter(date == "2022-02-20") %>%
+  filter(!is.na(fully_vaccinated_pct))
+```
+
+# Module 1 Comparison of Means
+
+## 1.0 Preparation
+
+```{r packages-compare}
+library(tidyverse)
+#install.packages("Hmisc")
+library(Hmisc)
+# install.packages("ggbeeswarm")
+library(ggbeeswarm)
+```
+
+We are very interested in the disparity in vaccine access between
+different regions. One intuitive way to explore this question would be
+to look at the differences in fully vaccination percentage
+(`fully_vaccinated_pct`) between continents (`region`).
+
+## 1.1 Descriptive Statistics
+
+It is often helpful to look at statistical parameters before we carry
+out more detailed analysis. Here we look at the mean, median, standard
+deviation, minimum and maximum.
+
+```{r descriptive-stat}
+summ_region <- Feb20 %>% 
+  group_by(region) %>%
+  summarise(mean_vax = mean(fully_vaccinated_pct),
+            median_vax = median(fully_vaccinated_pct),
+            sd_vax = sd(fully_vaccinated_pct),
+            min_vax = min(fully_vaccinated_pct),
+            max_vax = max(fully_vaccinated_pct))
+summ_region
+```
+
+## 1.2 Visualization wih box plots
+
+How would you present the distribution of the data in different groups?
+A box plot is usually the choice. Here we provide two alternate methods
+of visualizing the distribution of vaccination rates within each
+continent relative to each other.
+
+Method 1:
+
+```{r full-vac-vs-continent1}
+# install.packages("ggbeeswarm")
+library(ggbeeswarm)
+
+ggplot(data = Feb20, 
+            aes(x = region, y = fully_vaccinated_pct)) +
+  geom_boxplot() +
+  geom_beeswarm(alpha = 0.3) +
+  theme_classic() +
+  #theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(text = element_text(size = 18))
+
+```
+
+Method 2:
+
+```{r full-vac-vs-continent2}
+ggplot(data = Feb20, 
+            aes(x = region, y = fully_vaccinated_pct)) +
+  geom_jitter(alpha = 0.3) +
+  theme_classic() +
+  theme(text = element_text(size = 18)) +
+  #theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  # adds error bar
+  stat_summary(fun.data=mean_sdl, fun.args = list(mult=1),
+        geom="errorbar", width=0.3, size = 1) +
+  # adds mean point to the error bar
+  stat_summary(fun=mean, geom="crossbar")
+```
+
+Think about: Are there other ways of visualizing the same data? How does
+the presentation affect the way the data is interpreted.
+
+## 1.3 t-test
+
+Visually we can see that the the fully vaccinated rate in Africa in
+lower than the other continents. But is this difference statistically
+significant? To answer this question, we can run a t-test between Africa
+and a second continent of interest. For example, let's test the
+difference between Africa and Asia.
+
+```{r t-test-example}
+AfricaFeb20 <- Feb20 %>%
+  filter(region == 'Africa')
+
+AsiaFeb20 <- Feb20 %>%
+  filter(region == 'Asia')
+
+t.test(AfricaFeb20$fully_vaccinated_pct, AsiaFeb20$fully_vaccinated_pct)
+
+```
+
+## 1.4 ANOVA and post-hoc tests
+
+In the example above, we were only comparing two regions at a time. What
+are the limitations of running multiple t-tests? Note that we have
+several continents that we could be comparing. If we would like to
+compare the full vaccination rate between all continents, we need to
+perform an ANOVA.
+
+```{r ANOVA}
+vax_continent_aov <- aov(formula = fully_vaccinated_pct ~ region, data = Feb20)
+vax_continent_aov
+summary(vax_continent_aov)
+
+par(mfrow=c(2,2))
+plot(vax_continent_aov)
+par(mfrow=c(1,1))
+```
+
+To figure out where the differences came from, we would want to run a
+post-hoc test. In this case, we use Tukey's HSD (honestly significant
+difference) test as the post-hoc test.
+
+```{r Tukey}
+residuals_vax_continent_aov <- residuals(object = vax_continent_aov)
+shapiro.test(x = residuals_vax_continent_aov)
+
+vax_continent_Tukey <- TukeyHSD(vax_continent_aov)
+vax_continent_Tukey
+vax_continent_Tukey$region
+```
+
+# TASK 1: Comparison among groups
+
+```{=html}
+<style>
+  div.blue { background-color:#b3e5fc; border-radius: 15px; padding: 20px; margin: 2.5%; }
+</style>
+```
+::: blue
+## Task1-Q0.
+
+Later, in module 3 - Statistical learning, we offer 3 streams you can
+choose to attend
+
+    *   A. Clustering with principal component analysis (PCA)
+    *   B. Classification with decision trees
+    *   C. Regression with decision trees
+
+Members from the same group are expected to attend at least 2 streams.
+This way, you will acquire a unique expertise that will contribute to
+your group project submission. Please decide who will go to which
+stream:
+
+```{r TASK1-Q0, eval=FALSE}
+
+# Please list the names of people who will attend:
+
+# Stream A - Clustering with principal component analysis (PCA)
+
+# Stream B - Classification with decision trees
+
+# Stream C - Regression with decision trees
+
+
+```
+
+## Task1-Q1.
+
+In 1.4 we performed ANOVA and Tukey's HSD (honestly significant
+difference) test.
+
+a.  Please interpret the result of the ANOVA analysis. In your own
+    words, what is the take-home message of this test?
+
+b.  Please interpret the result of the Tukey's HSD test. In your own
+    words, what is the take-home message of this test?
+
+c.  Why did we choose to use Tukey's HSD test? What is the alternative
+    to ANOVA and Tukey's HSD? Under what situations will we need to use
+    the alternative tests?
+
+```{r TASK1-Q1, eval=FALSE}
+# Question 1a.
+  # Place your discussion here
+
+
+# Question 1b.
+  # Place your discussion here
+
+
+# Question 1c.
+  # Place your discussion here
+
+
+```
+
+## Task1-Q2.
+
+This task is focused on the choice of the response and the explanatory
+variables.
+
+a.  In the analysis above, what was the response variable and the
+    explanatory variable we analysed? Are they numeric or categorical?
+    Are they discrete or continuous?
+
+b.  You are invited to conduct a similar analysis on another set of
+    variables available in the dataset provided. Which is the depedent
+    variable that you are most interested exploring for your analysis?
+    Which independent variable would would you choose? Make sure the
+    types (numeric or categorical) of the variables you choose match
+    those in the example above. Please briefly justify why you chose
+    them / why you find them interesting.
+
+```{r TASK1-Q2, eval=FALSE}
+# Question 2a.
+  # Place your discussion here
+
+
+# Question 2b.
+  # Place your discussion here
+
+
+
+
+
+```
+
+## Task1-Q3.
+
+Please adapt the code above for your analysis with the variables you
+identified in Task1-Q2. For a complete answer, you need to
+
+a.  perform the appropriate statistical tests
+
+b.  generate appropriate plots to illustrate your analysis, and
+
+c.  interpret results and draw conclusions.
+
+```{r TASK1-Q3}
+# Question 3a.
+  # Place your code here
+
+
+# Question 3b.
+  # Place your code here
+
+
+```
+
+```{r TASK1-Q3c, eval=FALSE}
+# Question 3c.
+  # Place your discussion here
+
+
+
+```
+:::
+
+::: {style="page-break-after: always"}
+:::
+
+# 2. Data Visualization
+
+## 2.0 Preparation
+
+First let's load the packages needed for this module.
+
+```{r load-map-packages}
+#install.packages("sf")
+#install.packages("rnaturalearth")
+#install.packages("rnaturalearthdata")
+# install.packages("gganimate")
+# install.packages("gifski")
+# install.packages("transformr")
+# install.packages("ggalt")
+# install.packages("plotly")
+
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(gganimate)
+library(gifski)
+library(transformr)
+library(ggalt)
+library(plotly)
+```
+
+## 2.1 World Map
+
+In this section we will visualize data for countries on a world map. To
+do this, we need to obtain the data for the shapes of each country,
+which can be obtained from the package `sf`. Such geographic
+information, along with many other possibly useful data, is saved in the
+data frame `world`.
+
+```{r world-data}
+world <- ne_countries(scale = "medium", returnclass = "sf")
+str(world)
+head(world)
+
+```
+
+Next we extract the most important information from this data frame. We
+will use the ISO identifier to merge with our COVID-19 dataset, and keep
+the `geometry` for the shapes of countries.
+
+When merging the data frames, please make sure that the columns from
+`geo` are placed in front of COVID to avoid errors.
+
+```{r geo-extrct}
+geo <- world %>%
+  dplyr::rename(iso3c = iso_a3) %>%
+  select(iso3c, geometry)
+
+covid_map <- merge(geo, covid,             
+                  #As a result of the merging, some countries were dropped, why do you thinking this has occured?
+                  by = "iso3c",
+                  all.x = T)
+```
+
+Next we will plot the fully vaccination rate onto the world map.
+
+```{r world-map1}
+pmap <- ggplot(data = filter(covid_map, date == "2022-02-20")) +
+  geom_sf(aes(fill = fully_vaccinated_pct, text = paste("Country:", country))) +
+  scale_fill_viridis_c(trans = "sqrt") +
+  # customize legend title
+  labs(fill = "% fully vaccinated")
+
+ggplotly(pmap)
+```
+
+```{r world-map2}
+maxFeb <- covid %>%
+  #select(country, date, fully_vaccinated_pct) %>%
+  filter(date <= "2022-02-20") %>%
+  group_by(iso3c) %>%
+  filter(date == max(date)) %>%
+  summarise(date1 = date,
+            fully_vaccinated_pct = fully_vaccinated_pct)
+
+maxFeb_map <- merge(geo, maxFeb,  
+                  by = "iso3c",
+                  all.x = T)
+
+ggplot(data = maxFeb_map) +
+    geom_sf(aes(fill = fully_vaccinated_pct)) +
+  scale_fill_viridis_c(trans = "sqrt") +
+  # customize legend title
+  labs(fill = "% fully vaccinated")
+```
+
+## 2.2 Animation
+
+It can be very useful to animate the plot to present data that are
+evolving over time.
+
+The code chunk below takes lots of time to finish. `eval=FALSE` will
+skip running this chunk. To run the code chunk, please change to
+`eval=TRUE`.
+
+```{r map-animate, eval=FALSE}
+dates <- seq(as.Date("2021-04-01"),length=6,by="week")
+dates
+
+# animate_df <- covid_map %>%
+#   filter(date %in% dates) %>%
+#   replace_na(list(vaccinated_pct = -1)) %>%
+#   filter(!is.na(vaccinated_pct), !is.na(geometry))
+
+animate_df <- filter(covid_map, date %in% dates)
+#   
+
+ggplot(data = animate_df, aes(group = country)) +
+    geom_sf(aes(fill = vaccinated_pct)) +
+  scale_fill_viridis_c(option = "plasma", na.value="gray99", trans = "sqrt") +
+  transition_states(date, transition_length = 1, state_length = 1, wrap = F)+
+  # customize legend title
+  labs(fill = "% vaccinated")
+      # here is the animation code
+
+
+```
+
+## 2.3 Dumbbell Plot
+
+To rank and compare a certain measure across all countries, it is very
+useful to visualize in a 'dumbbell plot', a variation of bar plot.
+
+A dumbbell plot can simultaneously show 2 values for each country. In
+this case, we want to present the latest fully vaccination rate by
+September 2021 and that by January 2022. We will first extract these two
+values for each data and situate them in separate columns.
+
+```{r dumbbell-df}
+g1 <- covid %>%
+  select(country, date, fully_vaccinated_pct) %>%
+  filter(date <= "2021-09-30") %>%
+  drop_na(country, fully_vaccinated_pct) %>%
+  group_by(country) %>%
+  filter(date == max(date)) %>%
+  summarise(date1 = date,
+            rate1 = fully_vaccinated_pct)
+  
+  
+g2 <- covid %>%
+  select(country, date, fully_vaccinated_pct) %>%
+  filter(date <= "2022-01-31") %>%
+  drop_na(country, fully_vaccinated_pct) %>%
+  group_by(country) %>%
+  filter(date == max(date)) %>%
+  summarise(date2 = date,
+            rate2 = fully_vaccinated_pct)
+
+gdf <- merge(g1, g2, by = "country")
+
+head(gdf)
+
+```
+
+Please note that the countries are sorted by the highest vaccination
+rate.
+
+```{r dumbbell, fig.width=10,fig.height=25}
+# install.packages("ggalt")
+library(ggalt)
+
+gg <- ggplot(gdf, 
+             aes(x = rate1, xend = rate2, 
+                 y=reorder(country, rate2))) +  # sort the data
+        geom_dumbbell(color="#a3c4dc", 
+                      size = 2, 
+                      colour_x="#a3c4dc", 
+                      colour_xend = "#0e668b") + 
+        labs(x="% fully vaccinated", y=NULL) +
+        theme_classic() +
+        theme(plot.background=element_rect(fill="#f7f7f7"),
+              panel.background=element_rect(fill="#f7f7f7"),
+              panel.grid.minor=element_blank(),
+              panel.grid.major.y=element_blank(),
+              panel.grid.major.x=element_line(),
+              axis.ticks=element_blank(),
+              legend.position="top",
+              panel.border=element_blank())
+show(gg)
+```
+
+# TASK 2: Advanced Visualization
+
+```{=html}
+<style>
+  div.blue { background-color:#b3e5fc; border-radius: 15px; padding: 20px; margin: 2.5%; }
+</style>
+```
+::: blue
+## Task2-Q1.
+
+Taking a look at the visualizations 2.1 and 2.3, do the visualizations
+align with your expectations? Suggest some possible explanations as why
+the plots appear the way they do.
+
+```{r TASK2-Q1, eval=FALSE}
+# Question 1.
+  # Place your discussion here
+
+
+
+```
+
+## Task2-Q2.
+
+Refer to the dumbbell plot in section 2.3
+
+a\. Which countries saw the largest increases in full vaccination rate
+between September 2021 and January 2022?
+
+b\. What might account for the magnitude of the difference in
+vaccination rate between September 2021 and January 2022?
+
+c\. How does the plot change if you were to expand the time frame to go
+back to 2020? How are the data presented in this new visualization
+different in the underlying research questions that they answer?
+
+```{r TASK2-Q2, eval=FALSE}
+# Question 2.
+  # Place your discussion here
+
+
+
+```
+
+## Task2-Q2.
+
+Identify additional variables that can be visualized using some of the
+methods discussed. Modify the scripts above to visualize your variables
+of interest. If you would like, you may go beyond the specific
+visualizations discussed today and apply these concepts to another
+method of visualizing your data.
+
+```{r TASK2-Q3}
+# Question 3.
+  # Place your code here
+
+
+```
+
+## Task2-Q3.
+
+Interpret and discuss the results of your analysis. What are some of the
+limitations of the your visualization and how might you address these?
+
+```{r TASK2-Q4, eval=FALSE}
+# Question 4.
+  # Place your discussion here
+
+
+
+```
+:::
+
+::: {style="page-break-after: always"}
+:::
+
+# 3. Stream A - Principal Component Analysis (PCA)
+
+## 3A.1 Introduction to PCA
+
+When there are many variables in a data set, it is often challenging to
+summarize and plot all the variables together. Principal Component
+Analysis (PCA) allows us to summarize, visualize and classify data with
+fewer variables. Such practice of going from more variables (higher
+dimension) to fewer variables (lower dimension) is also called
+"dimension reduction".
+
+Briefly, Given a set X of n records of p variables, PCA returns p
+principal components (PCs), which are vectors of linear combinations of
+original variables orthogonal to one another. The first PC (PC1) is the
+direction along which the largest sample variance is observed. That is,
+PC1 is the new variable, derived from a linear combination of the
+original variable, that explains the most sample variance. In turn, PC2
+is the direction among all vectors perpendicular to PC1 that explains
+the most variance. Such iteration will go forth for PC3, PC4... until
+the last direction PC(p). Since the first few (1-3) PCs can explain most
+the variance, it is usually sufficient to summarize, visualize and
+classify data using only the first few PCs.
+
+The mathematical mechanism of PCA can be found
+[here](James2021_Chapter_UnsupervisedLearning.pdf).
+
+## 3A.2 Preparation
+
+First let's load the packages needed for this module.
+
+```{r PCA-prep}
+
+# install.packages("factoextra")
+library(factoextra)
+# install.packages("softImpute")
+library(softImpute)
+# install.packages("plotly")
+library(plotly)
+```
+
+We will select the parameters we are interested in. Please note that PCA
+can only use numerical variables for calculation. A few categorical
+variables have been included for grouping the points in visualization
+and/or filling missing values.
+
+For the example here, I have excluded the COVID-related variables by
+commenting out the associated lines. Later in the task, you may want to
+include (by un-commenting) those variables, and perhaps exclude some of
+the other variables.
+
+```{r PCA-select}
+
+pca_df <- Feb20 %>%
+  select(iso3c,             # categorical
+         country,           # categorical
+         subregion,         # categorical
+         wb_income_group,   # categorical
+         hospital_beds_per_thousand,
+         population,
+         population_density,
+         median_age,
+         aged_65_older,
+         aged_70_older,
+         life_expectancy,
+         #vaccinated_pct,             # for the demonstration I will exclude COVID-related variables
+         #fully_vaccinated_pct,
+         #total_cases,
+         #total_cases_per_million,
+         #total_deaths,
+         #total_deaths_per_million,
+         #total_boosters,
+         vdem_freedom_of_expression_score,
+         vdem_liberal_democracy_score,
+         boix_democracy_yes_no,
+         boix_democracy_duration_years,
+         freedom_house_civil_liberties,
+         freedom_house_political_rights,
+         freedom_house_freedom_score,
+         polity_democracy_score,
+         wdi_prop_less_2_usd_day,
+         wdi_gdppc_nominal,
+         wdi_gdppc_ppp,
+         wdi_urban_population_pct,
+         wdi_urban_pop_1m_cities_pct,
+         wdi_gini_index,
+         wdi_pop_under_15)
+names(pca_df)
+
+```
+
+## 3A.3 Dealing with missing values
+
+PCA analysis will fail with missing values. Let's take a look at where
+we can find the missing values.
+
+```{r examine-na}
+# Dimensions of data frame
+dim(pca_df)
+
+# Find NA by row
+rowSums(is.na(pca_df))
+
+# Find NA by column
+colSums(is.na(pca_df))
+```
+
+Delete all associated records with missing values seems too wasteful.
+Here we will 1) delete the rows/columns with particularly poor quality
+and 2) somehow fill the remaining missing values.
+
+We have 22 numeric variables and 95 records (countries). I arbitrarily
+decide that records (countries) missing \>= 10 variables are of poor
+quality. I then delete these rows. I also arbitrarily decide that
+variables missing \>= 10 data points should be excluded. However, Gini
+Index seems to be an important measure and is therefore kept in spite of
+its missing values.
+
+```{r removing-low-qual-row-col}
+clean_df <- subset(pca_df[rowSums(is.na(pca_df)) < 9,], 
+                   select = - c(wdi_urban_pop_1m_cities_pct, wdi_prop_less_2_usd_day))
+rowSums(is.na(clean_df))
+colSums(is.na(clean_df))
+```
+
+After excluding these rows and columns, we still have a few NA in the
+data set. One way of filling the missing values is to represent them by
+the median/mean of that column. Later on we will introduce another (and
+perhaps fancier) way of filling the missing values.
+
+Here we assume that the values for a given variable within a subregion
+would be similar, and therefore we fill the missing values with the
+median of the countries from the same subregion.
+
+```{r fill-na-group-median}
+clean_df2 <- clean_df %>%
+  group_by(subregion, wb_income_group) %>%
+  mutate_if(is.numeric,
+            function(x) ifelse(is.na(x), 
+                               median(x, na.rm = TRUE), 
+                               x))
+rowSums(is.na(clean_df2))
+colSums(is.na(clean_df2))
+
+```
+
+Unfortunately, we still have 2 remaining missing values unfilled. This
+is likely due to some subregions have insufficient or even no other data
+points for the grouped calculation. Here we use the global (instead of
+subregional) median to fill the remaining missing values.
+
+We also need to get rid of the categorical variables before PCA. Later
+in the visualization, row names of the data frame can be used to label
+the points. Therefore we set the row names as the names of the
+countries.
+
+```{r fill-remaining-na, echo=TRUE, results='hide'}
+clean_df3 <- clean_df2 %>%
+  group_by(wb_income_group) %>%
+  mutate_if(is.numeric,
+            function(x) ifelse(is.na(x), 
+                               median(x, na.rm = TRUE), 
+                               x))
+rowSums(is.na(clean_df3))
+colSums(is.na(clean_df3))
+
+# Excluding categorical variables.
+num_df <- subset(clean_df3, select = - c(iso3c, country, subregion, wb_income_group))
+as.data.frame(num_df)
+row.names(num_df) <- clean_df3$country
+```
+
+## 3A.4 Performing and analysing PCA
+
+When the data frame is ready, we call the `prcomp` function to perform
+PCA. Please note the scaling must be turned on by setting
+`scale. = TRUE` such that the contributions of the variables are not
+affected by their scale, but only the importance.
+
+```{r PCA}
+Feb20_pca <- prcomp(num_df, center = TRUE, scale. = TRUE)
+summary(Feb20_pca)
+str(Feb20_pca)
+```
+
+`Feb20_pca$x` is the computed coordinates of the countries in the
+resulting PCs. It should have the same dimension as the input data
+frame.
+
+Now we would like to plot the countries in the PC coordinate. Usually,
+the first 2 PCs can explain most of the variable and is sufficient for
+interpreting data.
+
+```{r visualizing-individual-quality}
+# install.packages("factoextra")
+library(factoextra)
+
+fviz_eig(Feb20_pca)
+
+fviz_pca_ind(Feb20_pca,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+```
+
+The good thing of PCA is that we can actually know how the original
+variables contributed to the PCs. We can also plot the variables to
+visualize how they have contributed to the PCs. We can also print their
+quantitative contributions.
+
+```{r variable-importance}
+fviz_pca_var(Feb20_pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+
+res.var <- get_pca_var(Feb20_pca)
+data.frame(variable_importance_PC1 = sort(res.var$contrib[,1], decreasing = TRUE))
+```
+
+To obtain the more detailed information, the code below might be
+helpful.
+
+```{r numerical-results, eval=FALSE}
+# Eigenvalues
+eig.val <- get_eigenvalue(Feb20_pca)
+eig.val
+  
+# Results for Variables
+res.var <- get_pca_var(Feb20_pca)
+res.var$coord          # Coordinates
+res.var$contrib        # Contributions to the PCs
+res.var$cos2           # Quality of representation 
+
+# Results for individuals
+res.ind <- get_pca_ind(Feb20_pca)
+res.ind$coord          # Coordinates
+res.ind$contrib        # Contributions to the PCs
+res.ind$cos2           # Quality of representation 
+```
+
+## 3A.5 Imputing missing values
+
+Believe it or not, the algorithm used by PCA itself can be used to fill
+the missing values. Such method of filling missing values is called
+"imputing". Here we will start from `clean_df` (after getting rid of
+poor quality records but before replacing any NA with median).
+
+```{r}
+# install.packages("softImpute")
+library(softImpute)
+
+# Xna is the matrix with NA.
+Xna <- data.matrix(scale(subset(clean_df, 
+                                select = - c(iso3c, country, subregion, wb_income_group))))
+
+# Xhat is the matrix with NAs filled by grouped medians. 
+Xhat <- data.matrix(scale(subset(clean_df3, 
+                                 select = - c(iso3c, country, subregion, wb_income_group))))
+
+# Scale 
+Xnas=biScale(Xna)
+
+fit <- softImpute(Xnas, type = "svd")
+Ximp <- complete(Xna, fit)
+
+Ximp[is.na(Xna)]  # Imputed missing values
+
+Xhat[is.na(Xna)]  # Missing values filled with grouped medians
+
+# How are the values filled from 2 methods related?
+
+plot(Ximp[is.na(Xna)], Xhat[is.na(Xna)])
+cor(Ximp[is.na(Xna)], Xhat[is.na(Xna)])
+
+```
+
+With the data filled by imputing, we can run another PCA. What
+differences can you notice?
+
+```{r PCA-with-imputed-df}
+names(Ximp) <- names(num_df)
+row.names(Ximp) <- row.names(num_df)
+
+Ximp_pca <- prcomp(Ximp, center = TRUE, scale. = TRUE)
+
+fviz_eig(Ximp_pca)
+
+fviz_pca_ind(Ximp_pca,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+
+fviz_pca_var(Ximp_pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+
+res.var <- get_pca_var(Ximp_pca)
+data.frame(variable_importance_PC1 = sort(res.var$contrib[,1], decreasing = TRUE))
+
+```
+
+## 3A.6 K-means clustering
+
+You might have noticed that PCA is very useful for visualizing data with
+many variables in PC1 and PC2. Usually, data points that cluster on this
+figure share similar patterns. Data points from different clusters have
+a distinct pattern. Researcher or computer algorithms can then decide
+whether a data point belongs to one category or another based on the
+clustering pattern in PCA. One such algorithm is called "K-means
+clustering", a common method used in unsupervised learning.
+
+Please note that K-means clustering uses a randomly generated number to
+initiate. For this reason, you may or may not be able to reproduce the
+result of K-means clustering. To ensure you get the same results, you
+may set a seed for the random number generator.
+
+```{r kmeans-clustering}
+# set a seed for random number generator
+set.seed(15)
+
+# Perform K-means
+kc <- kmeans(x = Ximp_pca$x, centers = 4)     # Ask K-means to find 4 clusters.
+
+# Plot the variables, coloured by known groups.
+fviz_pca_ind(Ximp_pca,
+             habillage=factor(clean_df3$wb_income_group), # Color by the World Bank income group
+             addEllipses=TRUE,
+             palette = "lancet",
+             repel = TRUE     # Avoid text overlapping
+             )
+
+# Plot the variables, coloured by K-means clusters.
+fviz_pca_ind(Ximp_pca,
+             habillage=factor(kc$cluster), # Color by the cluster identified in K-means
+             addEllipses=TRUE,
+             palette = "lancet",
+             repel = TRUE     # Avoid text overlapping
+             )
+
+# print the cluster results.
+data.frame(sort(kc$cluster))
+```
+
+## 3A.7 PCA in 3D
+
+It is also possible to show plot the first 3 PCs in 3D. The code below
+will generate an interactive 3D plot that allows you to explore with
+your mouse. However, you will only be able to see it after knitting the
+document.
+
+```{r PCA-3D}
+library(plotly)
+
+components <- data.frame(Ximp_pca$x, 
+                         cluster = as.character(kc$cluster), 
+                         country = row.names(Ximp_pca$x))
+head(components)
+
+fig <- plot_ly(components, x = ~PC1, y = ~PC2, z = ~PC3,
+               text = ~country,
+                hoverinfo = 'text',
+               marker =list(colorscale = 'Accent'),
+               color = ~cluster,
+               opacity = 0.8) %>%
+  add_markers() %>%
+  layout()
+
+fig
+```
+
+# TASK 3A: PCA and K-means
+
+```{=html}
+<style>
+  div.blue { background-color:#b3e5fc; border-radius: 15px; padding: 20px; margin: 2.5%; }
+</style>
+```
+::: blue
+## Task3A-Q1.
+
+In your own words, how is PCA useful in data analysis? You may want to
+list 3 possible ways of using PCA.
+
+```{r TASK3A-Q1, eval=FALSE}
+# Question 1.
+  # Place your discussion here
+
+
+
+```
+
+## Task3A-Q2.
+
+In the example above, we did not include COVID related variables for the
+analysis. Please perform a similar analysis as the example, with a focus
+on COVID-related data.
+
+a.  Which COVID-related variables would you want to include? Which
+    socio-economic variables do you also want to include? Generate a
+    data frame for the variables of your choice.
+
+b.  Are there missing values? How would you deal with them? Why? Please
+    explain in a commented line.
+
+c.  Perform the PCA analysis and K-means clustering. Visualize your
+    result.
+
+```{r TASK3A-Q2}
+# Question 2a.
+  # Place your code here
+
+
+# Question 2b.
+  # Place your code here
+
+
+
+# Question 2c.
+  # Place your code here
+
+
+
+```
+
+## Task3A-Q3.
+
+Interpret and discuss the results of your analysis.
+
+```{r TASK3A-Q3, eval=FALSE}
+# Question 3.
+  # Place your discussion here
+
+
+
+```
+:::
+
+::: {style="page-break-after: always"}
+:::
+
+# 3. Stream B - Classification with decision Trees
+
+## 3B.0 Preparation
+
+We will first load the packages required for this module.
+
+```{r load-decision-tree-packages}
+# install.packages("rpart")
+# install.packages("rsample")
+# install.packages("rpart.plot")
+# install.packages("tidymodels")
+# install.packages("caret")
+# install.packages("ranger")
+library(rpart)
+library(rsample)
+library(rpart.plot)
+library(tidymodels)
+library(caret)
+library(ranger)
+```
+
+## 3B.1 Classification tree
+
+Tree-based methods represent an important type of statistical learning
+that is simple and useful for interpretation. Decision trees stratifies
+or segments the predictor space into a number of simple regions and
+predict the outcome (dependent variable) in each of these regions. In
+fact, decision trees can be applied to both regression and
+classification problems. In this challenge, we will focus on
+classification problems. That is, to predict a categorical outcome
+(dependent variable).
+
+To begin with, let's engineer an outcome variable we would like to
+predict. We can first divide the countries into high, middle, and low
+vaccination groups depending on their fully vaccinated percentage. Each
+group has 1/3 of the countries.
+
+```{r divide}
+border <- quantile(Feb20$fully_vaccinated_pct, c(.33, .67))
+
+Feb20$fully_vac_group <- cut(Feb20$fully_vaccinated_pct,
+                             c(0, border, Inf),
+                             c('Low', 'Middle', 'High'))
+
+```
+
+Now we can generate the decision tree. In this case, we would like to
+predict the `fully_vac_group` using information from many explanatory
+(independent) variables. These explanatory variables can be numerical or
+categorical. Importantly, the categorical variables must have the type
+of "factor" rather than "character". Therefore, we will need to convert
+the these variables into factors.
+
+```{r simple-tree}
+# Convert into factors
+Feb20 <- Feb20 %>% mutate_if(sapply(Feb20, is.character), as.factor)
+
+# Define formula. dependent variable ~ independent variable1 + independent variable2 
+myformula <- fully_vac_group ~ 
+  region + economist_region + island + wb_income_group + freedom_house_freedom_score +
+  population + population_density + aged_65_older + wdi_gini_index + life_expectancy +
+  hospital_beds_per_thousand + wdi_gdppc_nominal + wdi_urban_population_pct 
+
+#Training the tree
+
+set.seed(818)   # set a seed number to reproduce the same result
+
+vac.class = train(myformula,
+                 data = Feb20,
+                 method = "rpart",  # for classification
+                 tuneLength = 5,  # choose up to 5 combinations of tuning parameters
+                 metric = "Accuracy",  # evaluate hyperparamter combinations with accuracy
+                 na.action = na.pass,
+                 trControl = trainControl(
+                   method = "repeatedcv",  # repeated k-fold cross validation
+                   number = 5,  # 5 folds
+                   repeats = 3, # repeat for 3 times
+                   # save predictions for the optimal tuning parameter
+                   savePredictions = "final",
+                   classProbs = TRUE  # return class probabilities in addition to predicted values
+                 )
+               )
+vac.class
+```
+
+There are always a few parameters we can tweak to learn a better model.
+In the case of classification tree, the most important parameter is
+complexity parameter `cp`. `tuneLength = 5` in the function `train()`
+will automatically try 5 `cp` values. A plot of accuracy vs cp shows
+their relationship. The final model uses the `cp` that gives the best
+accuracy.
+
+```{r tree-result}
+plot(vac.class)
+rpart.plot(vac.class$finalModel)
+plot(varImp(vac.class), main="Variable Importance with Simple Classication")
+```
+
+## 3B.2 Random forest
+
+The decision trees discussed above in suffer from high variance. This
+means that if we split the training data into two parts at random, and
+fit a decision tree to both halves, the results that we get could be
+quite different. Hence a natural way to reduce the variance and increase
+the test set accuracy of a statistical learning method is to take many
+training sets from the population, build a separate prediction model
+using each training set, and average the resulting predictions.
+
+The standard way to build models is to fit multiple candidate models
+with a "training" data set, then compare their performance using a
+"test" data set that the model has never seen. The reason for the test
+data set is that models can "overfit" the training data, and not
+generalize well to new data.
+
+First we will split the data into training and testing sets. Training
+set will have 80% of the data. Our model will be constructed by learning
+the training set. Later, we will evaluate the performance of our model
+using the rest 20% of data (test set).
+
+```{r split}
+set.seed(818) #Use seed if you want to arrive at the same result every time
+
+data_split <- initial_split(Feb20, prop = 0.6)
+data_train <- training(data_split)
+data_test <- testing(data_split)
+prop.table(table(data_train$fully_vac_group))
+```
+
+Similar to classification tree, `train()` can also automatically try a
+few parameters and help us find the best parameter for learning. In this
+case, we ask for 10 combinations of tuning parameters.
+
+```{r random-forest}
+set.seed(818)
+
+vac.frst = train(myformula,
+                 data = data_train,
+                 method = "ranger",  # for random forest
+                 tuneLength = 10,  # choose up to 10 combinations of tuning parameters
+                 metric = "Accuracy",  # evaluate hyperparamter combinations with accuracy
+                 importance = "permutation",
+                 na.action = na.omit,
+                 trControl = trainControl(
+                   method = "repeatedcv",  # repeated k-fold cross validation
+                   number = 5,  # 5 folds
+                   repeats = 3, # repeat for 3 times 
+                   # save predictions for the optimal tuning parameter
+                   savePredictions = "final",
+                   classProbs = TRUE  # return class probabilities in addition to predicted values
+                 )
+               )
+vac.frst
+plot(vac.frst)
+plot(varImp(vac.frst), main="Variable Importance with Random Forest")
+```
+
+After constructing the model, we can go on to evaluate the performance
+of the model using the test set.
+
+```{r frst-predict}
+data_test2 <- na.omit(data_test)
+data_pred <- predict(vac.frst, newdata = data_test2, type = "raw")
+
+vac.conf <- confusionMatrix(data = data_pred, 
+                            reference = data_test2$fully_vac_group)
+vac.conf
+```
+
+# TASK 3-B: Decision Tree
+
+```{=html}
+<style>
+  div.blue { background-color:#b3e5fc; border-radius: 15px; padding: 20px; margin: 2.5%; }
+</style>
+```
+::: blue
+## Task3B-Q1.
+
+In 3 - Stream B we performed classification using simple decision tree
+and random forest.
+
+a.  Which variable is the most important predictor of vaccination group?
+    What do you speculate to be the relationship between this variable
+    and our outcome? Is it a causal relationship?
+
+b.  Please interpret the result of the Decision Tree Model. In your own
+    words, what is the take-home message of this test?
+
+c.  Please describe the prediction accuracy, precision, specificity, and
+    sensitivity of this model. You may want to find the relevant
+    information from external sources. Should you do so, please include
+    the reference to the source.
+
+```{r TASK3B-Q1, eval=FALSE}
+set.seed(818) #Please run this before you split the data into train and test set.
+
+# Question 1a.
+  # Place your discussion here
+
+
+# Question 1b.
+  # Place your discussion here
+
+
+# Question 1c.
+  # Place your discussion here
+
+
+```
+
+## Task3B-Q2.
+
+This task is focused on the choice of the response and the explanatory
+variables.
+
+a.  In the analysis above, what was the response variable and the
+    explanatory variable we analysed? Are they numeric or categorical?
+    Are they discrete or continuous?
+
+b.  You are invited to conduct a similar analysis. Which is the response
+    variable that you are most interested in and that you would choose
+    for your analysis? Which explanatory variable would choose? Make
+    sure the types (numeric or categorical) of the variables you choose
+    must match those in the example above. Please briefly justify why
+    you choose them / why you find them interesting.
+
+```{r TASK3B-Q2, eval=FALSE}
+# Question 2a.
+  # Place your discussion here
+
+
+# Question 2b.
+  # Place your discussion here
+
+
+```
+
+## Task3B-Q3.
+
+Adapt the code above for your analysis with the variables you identified
+in Task3-B-Q2. For a complete answer, you need to
+
+a.  perform the appropriate decision tree generate appropriate plots to
+    illustrate your analysis, and
+
+b.  interpret results, describe the prediction effect of the models, and
+    draw conclusions.
+
+```{r TASK3B-Q3a}
+# Question 3a.
+  # Place your code here
+
+
+```
+
+```{r TASK3B-Q3b, eval=FALSE}
+# Question 3b.
+  # Place your discussion here
+
+
+
+```
+:::
+
+::: {style="page-break-after: always"}
+:::
+
+# 3. Stream C - Basic regression
+
+## 3C.0 Preparation
+
+```{r load-package-regression}
+# install.packages("psych")
+library(psych)
+# install.packages("mgcv")
+library(mgcv)
+# install.packages("leaps")
+library(leaps)
+```
+
+## 3C.1 Univariate Linear Regression
+
+After comparing the vaccination rate across different continent, we want
+to understand how other factors correlates with the vaccination rate.
+
+When approaching the relationship of two continuous variables, we
+typically generate a scatter plot where each data entry is plotted as
+dot with respect to the two variables.
+
+```{r scatter-plot}
+ggplot(Feb20, aes(x = wdi_urban_population_pct, y = fully_vaccinated_pct)) +
+  geom_point() +
+  theme_classic() +
+  theme(text = element_text(size = 18))
+```
+
+Apparently, the fully vaccinated rate and urban population percentage
+seem poorly correlated, although you may notice a slight up-going trend.
+
+To verify our observation, we can perform a linear regression. Linear
+regression is the statistical method for fitting a line to data, where
+the relationship between two variables, x and y can be modeled by a
+straight line with some error $y = b_{0} + b_{1} x + e$
+
+The values $b_{0}$ and $b_{1}$ represent the model's intercept and
+slope, respectively, and the error is represented by $e$. These values
+are calculated based on the data, i.e., they are sample statistics. we
+usually call x the predictor (explanatory) variable and we call y the
+outcome (response variable).
+
+```{r uni-lm}
+fully_vac.lm <- lm(fully_vaccinated_pct ~ wdi_urban_population_pct, Feb20)
+summary(fully_vac.lm)
+par(mfrow=c(2,2))
+plot(fully_vac.lm)
+par(mfrow=c(1,1))
+```
+
+We can also add the fitted model on top of the scatter plot.
+
+```{r lm-plot}
+ggplot(Feb20, aes(x = wdi_urban_population_pct, y =fully_vaccinated_pct)) +
+  geom_point() +
+  scale_x_log10() +
+  geom_smooth(method = "lm", formula = y ~ x) +    # lm, linear model
+  theme_classic() +
+  theme(text = element_text(size = 18)) 
+```
+
+## 3C.2 Generalized additive model (GAM)
+
+It is also possible to model the relationship between two variables as a
+smooth non-linear function, rather than a simple straight line.
+
+```{r gam-plot}
+ggplot(Feb20, aes(x = wdi_urban_population_pct, y =fully_vaccinated_pct)) +
+  geom_point() +
+  scale_x_log10() +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "cr")) +
+  theme_classic() +
+  theme(text = element_text(size = 18))
+```
+
+GAMs allow us to fit a non-linear function to the predictor variable, so
+that we can automatically model non-linear relationships that standard
+linear regression will miss. This means that we do not need to manually
+try out many different transformations on the variable individually.
+
+```{r uni-gam}
+# install.packages("mgcv")
+library(mgcv)
+
+fully_vac.gam <- gam(fully_vaccinated_pct ~ s(wdi_urban_population_pct), data = Feb20)
+summary(fully_vac.gam)
+```
+
+It seems that the adjusted $R^{2}$ has improved from the previous simple
+linear model. This appears to make GAM a better model than linear model
+for these two variables. To find out if GAM is indeed a better model, we
+can compare the variance explained by these two models using an ANOVA
+test.
+
+```{r ANOVA-model}
+
+anova(fully_vac.lm, fully_vac.gam, test = "Chisq")
+
+summary(fully_vac.lm)$adj.r.squared
+
+```
+
+The difference is significant. Model 2 has a higher adjusted $R^{2}$ and
+a lower residual sum of squares (RSS). It would appear the anova results
+tell us what we have probably come to believe already, that
+incorporating nonlinear effects has improved the model considerably.
+
+You have already seen ANOVA test used in 1.4. Here, the purpose of ANOVA
+is to compare two regression models, different from its application in
+1.4.
+
+## 3C.3 Multivariate Linear Regression
+
+There are usually multiple variables that may play a role in affecting
+our outcome variable. It is usually a good idea to subset the variables
+you are most interested in and generate a pairwise scatter plot. In this
+plot, you will get a visual impression of how the variables behave and
+further, a quantitative measure of pairwise Pearson's correlation
+coefficients will also be reported.
+
+```{r pairwise}
+# install.packages("psych")
+library(psych)
+
+numdf <- Feb20 %>%
+  select(fully_vaccinated_pct, population_density, aged_65_older, life_expectancy, freedom_house_freedom_score, wdi_gdppc_nominal)
+
+pairs.panels(numdf, 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             lm = TRUE,       # fit by linear regression
+             density = TRUE,  # show density plots
+             ellipses = FALSE # hide correlation ellipses
+             )
+
+```
+
+In linear model, it is possible to include multiple variables that are
+considered simultaneously. Please note that `lm()` can also take
+categorical variables. If a data point belongs to that group, then x = 1
+for that variable, otherwise x = 0.
+
+```{r multi-lm}
+
+mult.lm <- lm(fully_vaccinated_pct ~ population_density + aged_65_older + life_expectancy +
+                freedom_house_freedom_score + wdi_gdppc_nominal + wb_income_group + subregion, Feb20)
+summary(mult.lm)
+
+levels(factor(Feb20$wb_income_group))  # There are 4 levels in wb_income_group, but only 3 were seen in the model.
+                                       # The missing one is considered 'reference level'
+
+par(mfrow=c(2,2))
+plot(mult.lm)
+par(mfrow=c(1,1))
+```
+
+Similarly, it is possible to use multiple variables in GAM.
+
+```{r multi-gam}
+mult.gam <- gam(fully_vaccinated_pct ~ s(population_density) + s(aged_65_older) + s(life_expectancy) + 
+                  s(freedom_house_freedom_score) + s(wdi_gdppc_nominal) + wb_income_group + subregion, 
+                data = Feb20)
+
+summary(mult.gam)
+
+par(mfrow=c(2,3))
+plot(mult.gam)
+par(mfrow=c(1,1))
+
+```
+
+Again, anova could be used to compare the these two models. In this
+case, GAM is still able to explain more variance (lower RSS).
+
+```{r ANOVA-mult}
+
+anova(mult.lm, mult.gam, test = "Chisq")
+
+```
+
+## 3C.4 Model selection
+
+The best model is not always the most complicated. Sometimes including
+variables that are not evidently important can actually reduce the
+accuracy of predictions. In this section, we discuss model selection
+strategies, which will help us eliminate variables from the model that
+are found to be less important.
+
+For linear models, the `regsubsets()` function (part of the leaps
+library) performs best set selection by identifying the best model that
+contains a given number of predictors, where best is quantified using
+RSS. The `summary()` command outputs the best set of variables for each
+model size.
+
+```{r subset-sel}
+library(leaps)
+
+regfit.full <- regsubsets(fully_vaccinated_pct ~ population_density + aged_65_older + life_expectancy +
+                freedom_house_freedom_score + wdi_gdppc_nominal, 
+                data = Feb20)
+
+summary(regfit.full)
+```
+
+An asterisk indicates that a given variable is included in the
+corresponding model. For instance, for two-variable models, the best
+model contains only `life_expectancy` and `wdi_gdppc_nominal`.
+
+We can further compare the RSS and adjusted $R^{2}$ by plotting them.
+
+```{r compare-models}
+par(mfrow = c(1, 2))
+plot(summary(regfit.full)$rss, xlab = '# variables', ylab = 'RSS', type = 'l')
+plot(summary(regfit.full)$adjr2, xlab = '# variables', ylab = 'adj R^2', type = 'l')
+par(mfrow = c(1, 1))
+```
+
+# TASK 3C: Simple Linear Regression
+
+```{=html}
+<style>
+  div.blue { background-color:#b3e5fc; border-radius: 15px; padding: 20px; margin: 2.5%; }
+</style>
+```
+::: blue
+## Task3C-Q1.
+
+In 2.4 we compared linear models containing different numbers of
+explanatory variables. Please interpret the result of the last figure.
+In your own words, what is the take-home message of this test?
+
+```{r TASK3C-Q1, eval=FALSE}
+# Question 1.
+  # Place your discussion here
+
+
+```
+
+## Task3C-Q2.
+
+You are invited to conduct a similar analysis. Which is the response
+variable that you are most interested in and that you would choose for
+your analysis? Which explanatory variable would choose? Make sure the
+types (numeric or categorical) of the variables you choose must match
+those in the example above. Please briefly justify why you choose them /
+why you find them interesting.
+
+```{r TASK3C-Q2, eval=FALSE}
+# Question 2a.
+  # Place your discussion here
+
+
+# Question 2b.
+  # Place your discussion here
+
+
+```
+
+## Task3C-Q3.
+
+Please adapt the code above for your analysis with the variables you
+identified in Task2-Q2. For a complete answer, you need to
+
+a.  Describe the possible models, compare them, and decide which is the
+    best model
+
+b.  generate appropriate plots to illustrate your analysis, and
+
+c.  interpret results and draw conclusions.
+
+```{r TASK3C-Q3}
+# Question 3a.
+  # Place your code here
+
+
+# Question 3b.
+  # Place your code here
+
+
+```
+
+```{r TASK3C-Q3c, eval=FALSE}
+# Question 3c.
+  # Place your discussion here
+
+
+
+```
+:::
+
+# TASK 4: Conclusion
+
+```{=html}
+<style>
+  div.blue { background-color:#b3e5fc; border-radius: 15px; padding: 20px; margin: 2.5%; }
+</style>
+```
+::: blue
+## Task4-Q1.
+
+Please write a paragraph of discussion to summarize your mini-project
+critically. In this paragraph, you will briefly describe the motivation,
+rationale for methods, results and conclusions. Based on your current
+findings, you will point to the hypotheses/speculations you would like
+to make and propose work to further the research. You will also discuss
+the drawbacks and limitations of your work.
+
+```{r TASK4-Q1, eval=FALSE}
+# Place your discussion here
+
+
+```
+
+## Task4-Q2.
+
+Describe the contributions of *each* of your team members. List the
+names of your team members on separate lines. In each line, describe
+their contributions behind their names.
+
+```{r TASK4-Q2, eval=FALSE}
+# Place your answers here
+
+
+```
+:::
+
+# Credit and acknowledgment
+
+The material is developed by the Programs Team, Pedagogy - Hao Zheng,
+Carly Chan, Shuce Zhang. Correspondence regarding the content should be
+addressed to S.Z.
+[shuce.zhang\@yourekacanada.org](mailto:shuce.zhang@yourekacanada.org){.email}.
+
+We acknowledge the valuable discussions, suggestions and technical
+assistance from the rest of Programs Team -Pouria Torabi, Eddie Guo, Ben
+Perks. Correspondence regarding the operation should be addressed to
+P.T.
+[pouria.torabi\@yourekacanada.org](mailto:pouria.torabi@yourekacanada.org){.email}.
+
+We thank all other staff from Youreka and their efforts to facilitate
+this event.
